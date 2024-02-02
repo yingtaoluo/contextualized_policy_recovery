@@ -112,49 +112,9 @@ def L1_bce(pred:torch.Tensor, target:torch.Tensor, theta:torch.Tensor, lamb:floa
     return loss
 
 
-def L1_bce_global(pred:torch.Tensor, target:torch.Tensor, theta:torch.Tensor, beta:torch.Tensor,
-                  lamb:float, mask:torch.Tensor) -> torch.Tensor:
-    """Compute the L1 loss with a L1 regularization term on the coefficients.
-
-    Parameters
-    ----------
-    pred : torch.Tensor
-        Predicted probabilities.
-    target : torch.Tensor
-        True labels.
-    theta : torch.Tensor
-        Linear Coefficients.
-    lamb : float
-        Regularization coefficient.
-    mask : torch.Tensor
-        Mask to remove padded values.
-
-    Returns
-    -------
-    torch.Tensor
-        The loss.
-    """
-
-    zer_theta = torch.zeros_like(theta)
-    zer_beta = torch.zeros_like(beta)
-    reg = nn.L1Loss(reduction="none")
-    loss_fct = nn.BCELoss(reduction="none")
-
-    mask_l1 = mask.unsqueeze(-1).expand(theta.size())
-    mask_l1_beta = mask.unsqueeze(-1).expand(beta.size())
-
-    reg_theta = lamb * reg(theta, zer_theta) * mask_l1
-    reg_beta = lamb * reg(beta, zer_beta) * mask_l1_beta
-    bce = loss_fct(pred, target) * mask
-
-    loss = bce.sum()/mask.sum() + (reg_theta.sum()+reg_beta.sum()) / mask.sum()
-
-    return loss
-
-
 def train_contextual(exp_name:str, input_size:int, context_size:int, train_loader:torch.utils.data.DataLoader, 
                      val_loader:torch.utils.data.DataLoader, lr:float=5e-4, rnn_type:str="LSTM", 
-                     hidden_dims:List[int]=[16, 32, 64], lambdas:List[float]=[0.0001, 0.001, 0.01, 0.1],
+                     hidden_dims:List[int]=[16, 32, 64], lambdas:List[int]=[0.0001, 0.001, 0.01, 0.1], 
                      bootstrap:Optional[int]=None, implicit_theta=False):
     """Train a contextualized model.
 
@@ -222,33 +182,20 @@ def train_contextual(exp_name:str, input_size:int, context_size:int, train_loade
 
                     outs = []
                     thetas = []
-                    betas = []
-                    offset = torch.zeros((batch_size, ))
-
                     for step in range(context.size(-1)):
                         context_step = context[:, :,step].unsqueeze(-2)
                         features_step = features[:, :,step].unsqueeze(-2)
-                        target_step = targets[:, step:step+1].unsqueeze(-2)
 
-                        if not implicit_theta:
-                            out, hidden, theta, beta, offset = model(context=context_step, observation=features_step,
-                                                                     target=target_step, hidden=hidden, offset=offset)
-                            betas.append(beta)
-                        else:
-                            out, hidden, theta = model(context=context_step, observation=features_step, hidden=hidden)
+                        out, hidden, theta = model(context=context_step, observation=features_step, hidden=hidden)
                         # we dont regularize the intercept
-                        thetas.append(theta)
+                        thetas.append(theta[:,:-1])
                         outs.append(out)
     
                     probs = torch.vstack(outs).T
                     thetas = torch.stack(thetas)
                     thetas = thetas.permute(1,0,2)
-                    if not implicit_theta:
-                        betas = torch.stack(betas)
-                        betas = betas.permute(1,0,2)
-                        loss = L1_bce_global(pred=probs, target=targets, theta=thetas, beta=betas, lamb=lamb, mask=mask)
-                    else:
-                        loss = L1_bce(pred=probs, target=targets, theta=thetas, lamb=lamb, mask=mask)
+
+                    loss = L1_bce(pred=probs, target=targets, theta=thetas, lamb=lamb, mask=mask)
                     loss.backward()
                     loss_train += loss.item()
 
@@ -265,31 +212,18 @@ def train_contextual(exp_name:str, input_size:int, context_size:int, train_loade
                     hidden = model.init_hidden(batch_size=batch_size, static=static)
                     outs = []
                     thetas = []
-                    betas = []
-                    offset = torch.zeros((batch_size,))
                     for step in range(context.size(-1)):
                         context_step = context[:, :,step].unsqueeze(-2)
                         features_step = features[:, :,step].unsqueeze(-2)
-                        target_step = targets[:, step:step + 1].unsqueeze(-2)
                         
-                        if not implicit_theta:
-                            out, hidden, theta, beta, offset = model(context=context_step, observation=features_step,
-                                                                     target=target_step, hidden=hidden, offset=offset)
-                            betas.append(beta)
-                        else:
-                            out, hidden, theta = model(context=context_step, observation=features_step, hidden=hidden)
+                        out, hidden, theta = model(context=context_step, observation=features_step, hidden=hidden)
                         outs.append(out)
                         thetas.append(theta)
 
-                    probs = torch.vstack(outs).T
+                    outs = torch.vstack(outs).T
                     thetas = torch.stack(thetas)
                     thetas = thetas.permute(1,0,2)
-                    if not implicit_theta:
-                        betas = torch.stack(betas)
-                        betas = betas.permute(1, 0, 2)
-                        loss = L1_bce_global(pred=probs, target=targets, theta=thetas, beta=betas, lamb=lamb, mask=mask)
-                    else:
-                        loss = L1_bce(pred=probs, target=targets, theta=thetas, lamb=lamb, mask=mask)
+                    loss = L1_bce(pred=outs, target=targets, theta=thetas, lamb=0.0, mask=mask)
                     v_losses.append(loss.item())
 
                 val_loss = np.mean(v_losses)
