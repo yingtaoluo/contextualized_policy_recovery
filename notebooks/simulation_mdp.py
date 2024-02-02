@@ -53,7 +53,7 @@ def gen_data(time_lag, noise, N, seq_length, cn):
             # a.append(a_t)
             # plot_row = [i, t, theta_t, x_t, prob_t, a_t]
             # plot_rows.append(plot_row)
-            
+
             # Homogeneous, observation-dependent
             # x_t = np.random.uniform(-2, 2)
             # x.append(x_t)
@@ -71,12 +71,12 @@ def gen_data(time_lag, noise, N, seq_length, cn):
             # Heterogeneous, observation and action dependent
             x_t = np.random.uniform(-2, 2)
             if len(x) < time_lag:
-                a_t = np.random.choice([0,1])
+                a_t = np.random.choice([0, 1])
                 plot_row = [i, t, np.nan, x_t, np.nan, a_t]
             else:
                 theta_t = modify_coefficients(x[-time_lag] * (a[-time_lag] * 2 - 1) + t / seq_length, cn)
                 prob_t = 1 / (1 + np.exp(-theta_t * x_t + noise * np.random.normal()))
-                a_t = int(np.random.uniform(0,1) < prob_t)
+                a_t = int(np.random.uniform(0, 1) < prob_t)
                 plot_row = [i, t, theta_t, x_t, prob_t, a_t]
 
             a.append(a_t)
@@ -107,20 +107,17 @@ def run_model(exp_name, sim_df, seq_length, implicit_theta, hidden_dims=[16], la
 
     best_context_l = trainer.get_best_run(exp=exp_name, pref="context_LSTM")
     best_context_l_model = trainer.load_run(run=best_context_l, dataset_name=exp_name, implicit_theta=implicit_theta)
-    pred_context, true_context = models.model_predict(best_context_l_model, loader_test, implicit_theta)
-    auroc, auprc, brier, f1 = trainer.calculate_results(pred=pred_context, true=true_context)
+    pred_context, true_context = models.model_predict(best_context_l_model, loader_test)
+    auroc, auprc, brier, f1 = trainer.calculate_results(pred = pred_context, true=true_context)
 
-    coef_df, enc = models.map_to_2d(model=best_context_l_model, loader_test=loader_test, feature_cols=feature_cols,
-                                    implicit_theta=implicit_theta)
+    coef_df, enc = models.map_to_2d(model = best_context_l_model, loader_test=loader_test, feature_cols=feature_cols)
     coef_df.columns = ['i', 't'] + [c + "_model" for c in coef_df.columns[2:]]
     plot_df = sim_df.merge(coef_df, on=["i", "t"], how='inner')
 
     pcc_theta = plot_df[['theta', 'x_model']].corr().values[0, 1]
-    pcc_theta = abs(pcc_theta) if not implicit_theta else pcc_theta
     mse_theta = np.mean((plot_df['theta'] - plot_df['x_model'])**2)
     mae_theta = np.mean(np.abs(plot_df['theta'] - plot_df['x_model']))
     pcc_prob = plot_df[['prob_a', 'prob_model']].corr().values[0, 1]
-    pcc_prob = abs(pcc_prob) if not implicit_theta else pcc_prob
     mse_prob = np.mean((plot_df['prob_a'] - plot_df['prob_model'])**2)
     mae_prob = np.mean(np.abs(plot_df['prob_a'] - plot_df['prob_model']))
     return [pcc_theta, mse_theta, mae_theta, pcc_prob, mse_prob, mae_prob, auroc, auprc, brier, f1]
@@ -128,7 +125,8 @@ def run_model(exp_name, sim_df, seq_length, implicit_theta, hidden_dims=[16], la
 
 if __name__ == '__main__':
     arg_cols = ["time_lag", "noise", "N", "seq_length", "context_noise", "run", "implicit_theta"]
-    metric_cols = ["pcc_theta", "mse_theta", "mae_theta", "pcc_prob", "mse_prob", "mae_prob", "auroc", "auprc", "brier", "f1"]
+    metric_cols = ["pcc_theta", "mse_theta", "mae_theta", "pcc_prob", "mse_prob", "mae_prob", "auroc", "auprc", "brier",
+                   "f1"]
 
     # result_rows = []
     # for time_lag in [4]:
@@ -137,15 +135,17 @@ if __name__ == '__main__':
     #             for seq_length in [15]:
     #                 for context_noise in [0.0, 1e-2, 1e-1, 1.0]:
     #                     for run in range(3):
-    #                         sim_df = gen_data(time_lag=time_lag, noise=noise, N=N, seq_length=seq_length, cn=context_noise)
-    #                         for implicit_theta in [False, True]:
+    #                         sim_df = gen_data(time_lag=time_lag, noise=noise, N=N, seq_length=seq_length,
+    #                                           cn=context_noise)
+    #                         for implicit_theta in [False]:
     #                             args = [time_lag, noise, N, seq_length, context_noise, run, implicit_theta]
     #                             metrics = run_model(f"Z_simulation_mdp_{args}", sim_df,
     #                                                 seq_length=seq_length, implicit_theta=implicit_theta)
     #                             result_rows.append(args + metrics)
-    #                             pd.DataFrame(result_rows, columns=arg_cols + metric_cols).to_csv('simulation_noisy_context.csv',
-    #                                                                                              index=False)
-
+    #                             pd.DataFrame(result_rows, columns=arg_cols + metric_cols).to_csv(
+    #                                 'simulation_noisy_context.csv',
+    #                                 index=False)
+    #
     # result_rows = []
     # for time_lag in [1, 2, 4]:
     #     for noise in [0.0]:
@@ -154,14 +154,14 @@ if __name__ == '__main__':
     #                 for context_noise in [0.0]:
     #                     for run in range(3):
     #                         sim_df = gen_data(time_lag=time_lag, noise=noise, N=N, seq_length=seq_length, cn=context_noise)
-    #                         for implicit_theta in [False, True]:
+    #                         for implicit_theta in [False]:
     #                             args = [time_lag, noise, N, seq_length, context_noise, run, implicit_theta]
     #                             metrics = run_model(f"Z_simulation_mdp_{args}", sim_df,
     #                                                 seq_length=seq_length, implicit_theta=implicit_theta)
     #                             result_rows.append(args + metrics)
     #                             pd.DataFrame(result_rows, columns=arg_cols + metric_cols).to_csv('simulation_time_lag.csv',
     #                                                                                              index=False)
-
+    #
     # result_rows = []
     # for time_lag in [4]:
     #     for noise in [0.0, 0.01, 0.1, 1]:
@@ -170,7 +170,7 @@ if __name__ == '__main__':
     #                 for context_noise in [0.0]:
     #                     for run in range(3):
     #                         sim_df = gen_data(time_lag=time_lag, noise=noise, N=N, seq_length=seq_length, cn=context_noise)
-    #                         for implicit_theta in [False, True]:
+    #                         for implicit_theta in [False]:
     #                             args = [time_lag, noise, N, seq_length, context_noise, run, implicit_theta]
     #                             metrics = run_model(f"Z_simulation_mdp_{args}", sim_df,
     #                                                 seq_length=seq_length, implicit_theta=implicit_theta)
@@ -186,7 +186,7 @@ if __name__ == '__main__':
                     for context_noise in [0.0]:
                         for run in range(3):
                             # sim_df = gen_data(time_lag=time_lag, noise=noise, N=N, seq_length=seq_length, cn=context_noise)
-                            for implicit_theta in [False, True]:
+                            for implicit_theta in [False]:
                                 sim_df = gen_data(time_lag=time_lag, noise=noise, N=N, seq_length=seq_length,
                                                   cn=context_noise)
                                 args = [time_lag, noise, N, seq_length, context_noise, run, implicit_theta]
@@ -204,12 +204,28 @@ if __name__ == '__main__':
     #                 for context_noise in [0.0]:
     #                     for run in range(3):
     #                         sim_df = gen_data(time_lag=time_lag, noise=noise, N=N, seq_length=seq_length, cn=context_noise)
-    #                         for implicit_theta in [False, True]:
+    #                         for implicit_theta in [False]:
     #                             args = [time_lag, noise, N, seq_length, context_noise, run, implicit_theta]
     #                             metrics = run_model(f"Z_simulation_mdp_{args}", sim_df,
     #                                                 seq_length=seq_length, implicit_theta=implicit_theta)
     #                             result_rows.append(args + metrics)
     #                             pd.DataFrame(result_rows, columns=arg_cols + metric_cols).to_csv('simulation_seq_length.csv',
     #                                                                                              index=False)
-    #
+
     print('finished successfully <:)')
+
+    # arg_cols = ["time_lag", "noise", "N", "seq_length", "run", "implicit_theta"]
+    # metric_cols = ["pcc_theta", "mse_theta", "mae_theta", "pcc_prob", "mse_prob", "mae_prob", "auroc", "auprc", "brier", "f1"]
+    # result_rows = []
+    # for time_lag in [1, 2, 4]:
+    #     for noise in [0.0, 1e-2, 1e-1, 1.0]:
+    #         for N in [20, 200, 2000]:
+    #             for seq_length in [5, 10, 15]:
+    #                 for run in range(3):
+    #                     sim_df = gen_data(time_lag=time_lag, noise=noise, N=N, seq_length=seq_length)
+    #                     for implicit_theta in [False, True]:
+    #                         args = [time_lag, noise, N, seq_length, run, implicit_theta]
+    #                         metrics = run_model(f"Z_simulation_mdp_{args}", sim_df, seq_length=seq_length, implicit_theta=implicit_theta)
+    #                         result_rows.append(args + metrics)
+    #                         pd.DataFrame(result_rows, columns=arg_cols + metric_cols).to_csv('simulation_mdp.csv', index=False)
+    # print('finished successfully <:)')
